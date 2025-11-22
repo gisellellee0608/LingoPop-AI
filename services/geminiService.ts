@@ -70,7 +70,6 @@ export const generateConceptImage = async (term: string, mainModel: string = 'ge
   const isPro = mainModel.includes('pro') || mainModel.includes('3');
   const imageModel = isPro ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   
-  // Config: Pro models support explicit size setting
   // CRITICAL: We MUST set safety settings to BLOCK_ONLY_HIGH to prevent false positives from blocking the image.
   const safetySettings = [
     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
@@ -89,28 +88,38 @@ export const generateConceptImage = async (term: string, mainModel: string = 'ge
         safetySettings: safetySettings
       };
 
-  try {
-    // Simplified prompt for Flash Image to ensure better success rate
-    const promptText = isPro 
-      ? `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background. No text.`
-      : `A simple, colorful, vector icon representing "${term}". White background.`;
-
+  // Helper function to try generation
+  const tryGenerate = async (promptText: string) => {
     const response = await ai.models.generateContent({
       model: imageModel,
-      contents: {
-        parts: [{ text: promptText }]
-      },
+      contents: { parts: [{ text: promptText }] },
       config: config
     });
-
-    // Iterate through parts to find the image data
     if (response.candidates?.[0]?.content?.parts) {
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData && part.inlineData.data) {
-                return part.inlineData.data;
-            }
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          return part.inlineData.data;
         }
+      }
     }
+    return undefined;
+  };
+
+  try {
+    // Attempt 1: Standard prompt
+    const prompt1 = isPro 
+      ? `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background. No text.`
+      : `A simple, colorful, vector icon representing "${term}". White background.`;
+    
+    const result1 = await tryGenerate(prompt1);
+    if (result1) return result1;
+
+    // Attempt 2 (Retry): Simpler prompt if first failed
+    console.log("First image attempt failed, retrying with simpler prompt...");
+    const prompt2 = `A drawing of ${term}`;
+    const result2 = await tryGenerate(prompt2);
+    return result2;
+
   } catch (e) {
     console.warn(`Image generation failed using model ${imageModel}.`, e);
   }
