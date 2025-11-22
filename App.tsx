@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Languages, Book, Search, RotateCcw, Volume2, Send, 
-  Save, Sparkles, ChevronRight, Brain, ArrowLeft, Loader2, Star, Settings, CheckCircle, Key, Eye, EyeOff
+  Save, Sparkles, ChevronRight, Brain, ArrowLeft, Loader2, Star, Settings, CheckCircle, Key, Eye, EyeOff,
+  Download, Upload, Trash2
 } from 'lucide-react';
 import { 
   AppView, 
@@ -450,9 +451,11 @@ const NotebookView: React.FC<{
   nativeLang: string;
   onDelete: (id: string) => void;
   model: string;
-}> = ({ entries, targetLang, nativeLang, onDelete, model }) => {
+  onImport: (data: DictionaryEntry[]) => void;
+}> = ({ entries, targetLang, nativeLang, onDelete, model, onImport }) => {
   const [story, setStory] = useState<string | null>(null);
   const [loadingStory, setLoadingStory] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGenerateStory = async () => {
     if (entries.length < 3) {
@@ -476,15 +479,41 @@ const NotebookView: React.FC<{
     }
   };
 
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-gray-400 p-6 text-center">
-        <Book className="w-20 h-20 mb-4 opacity-20" />
-        <h3 className="text-xl font-bold text-gray-500">Your notebook is empty</h3>
-        <p className="text-sm mt-2">Save words from your searches to review them here.</p>
-      </div>
-    );
-  }
+  const handleExport = () => {
+    const dataStr = JSON.stringify(entries, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `lingopop_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedData = JSON.parse(event.target?.result as string);
+        if (Array.isArray(importedData)) {
+          onImport(importedData);
+          alert("Notebook restored successfully!");
+        } else {
+          alert("Invalid backup file format.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Failed to read backup file.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   return (
     <div className="px-4 pb-24 max-w-lg mx-auto pt-6 space-y-6">
@@ -492,13 +521,49 @@ const NotebookView: React.FC<{
         <h2 className="text-2xl font-bold text-pop-dark">My Collection ({entries.length})</h2>
         <button 
           onClick={handleGenerateStory}
-          disabled={loadingStory}
-          className="flex items-center gap-2 text-xs font-bold text-pop-primary bg-indigo-50 px-3 py-2 rounded-full hover:bg-indigo-100 transition"
+          disabled={loadingStory || entries.length < 3}
+          className="flex items-center gap-2 text-xs font-bold text-pop-primary bg-indigo-50 px-3 py-2 rounded-full hover:bg-indigo-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loadingStory ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
           Magic Story
         </button>
       </div>
+
+      {/* Data Management Section */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+        <div className="text-sm text-gray-500 font-medium">Data Backup</div>
+        <div className="flex gap-2">
+           <input 
+            type="file" 
+            ref={fileInputRef}
+            onChange={handleFileImport}
+            className="hidden" 
+            accept=".json"
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1 text-xs"
+            title="Import Backup"
+          >
+            <Upload className="w-4 h-4" /> Import
+          </button>
+          <button 
+            onClick={handleExport}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1 text-xs"
+            title="Export Backup"
+          >
+            <Download className="w-4 h-4" /> Export
+          </button>
+        </div>
+      </div>
+
+      {entries.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-[40vh] text-gray-400 p-6 text-center">
+          <Book className="w-16 h-16 mb-4 opacity-20" />
+          <h3 className="text-xl font-bold text-gray-500">Your notebook is empty</h3>
+          <p className="text-sm mt-2">Save words or import a backup to get started.</p>
+        </div>
+      )}
 
       {story && (
         <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-3xl border border-purple-100 shadow-sm animate-[fadeIn_0.5s]">
@@ -512,14 +577,16 @@ const NotebookView: React.FC<{
 
       <div className="space-y-3">
         {entries.map(entry => (
-          <div key={entry.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4 items-start">
+          <div key={entry.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4 items-start group">
              {entry.imageUrl && (
                <img src={`data:image/png;base64,${entry.imageUrl}`} className="w-16 h-16 rounded-xl object-cover bg-gray-100 flex-shrink-0" alt="" />
              )}
              <div className="flex-1">
                <div className="flex justify-between items-start">
                  <h3 className="font-bold text-lg text-gray-800">{entry.term}</h3>
-                 <button onClick={() => onDelete(entry.id)} className="text-gray-300 hover:text-red-400">&times;</button>
+                 <button onClick={() => onDelete(entry.id)} className="text-gray-300 hover:text-red-400 p-1">
+                   <Trash2 className="w-4 h-4" />
+                 </button>
                </div>
                <p className="text-sm text-gray-500 line-clamp-2">{entry.definition}</p>
              </div>
@@ -707,6 +774,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleImportData = (data: DictionaryEntry[]) => {
+    // Merge strategy: Add unique items by term
+    setNotebook(prev => {
+      const existingTerms = new Set(prev.map(p => p.term));
+      const newItems = data.filter(d => !existingTerms.has(d.term));
+      return [...newItems, ...prev];
+    });
+  };
+
   const isSaved = (term: string) => notebook.some(n => n.term === term);
 
   if (view === AppView.CONFIG) {
@@ -747,6 +823,7 @@ const App: React.FC = () => {
           nativeLang={nativeLang} 
           onDelete={(id) => setNotebook(prev => prev.filter(n => n.id !== id))}
           model={model}
+          onImport={handleImportData}
         />
       )}
 
