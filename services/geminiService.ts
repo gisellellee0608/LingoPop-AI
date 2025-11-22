@@ -61,31 +61,39 @@ export const lookupWord = async (
   return JSON.parse(text);
 };
 
-export const generateConceptImage = async (term: string): Promise<string | undefined> => {
+export const generateConceptImage = async (term: string, mainModel: string = 'gemini-2.5-flash'): Promise<string | undefined> => {
   const ai = getClient();
   
-  // Using 2.5-flash-image as it's fast and sufficient for icons/concepts
+  // Intelligent Model Selection:
+  // If user selected a "Pro" text model (2.5 Pro or 3 Pro), switch to "gemini-3-pro-image-preview" for high quality.
+  // If user selected a "Flash" text model, switch to "gemini-2.5-flash-image" (standard generation).
+  const isPro = mainModel.includes('pro') || mainModel.includes('3');
+  const imageModel = isPro ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+  
+  // Config: Pro models support explicit size setting
+  const config = isPro 
+    ? { imageConfig: { aspectRatio: "1:1", imageSize: "1K" } } 
+    : { imageConfig: { aspectRatio: "1:1" } };
+
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model: imageModel,
       contents: {
-        parts: [{ text: `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background.` }]
+        parts: [{ text: `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background. No text.` }]
       },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-        }
-      }
+      config: config
     });
 
-    // Helper to find image part
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData && part.inlineData.data) {
-        return part.inlineData.data;
-      }
+    // Iterate through parts to find the image data
+    if (response.candidates?.[0]?.content?.parts) {
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData && part.inlineData.data) {
+                return part.inlineData.data;
+            }
+        }
     }
   } catch (e) {
-    console.warn("Image generation failed", e);
+    console.warn(`Image generation failed using model ${imageModel}. This might be due to safety filters or model unavailability.`, e);
   }
   return undefined;
 };
@@ -93,6 +101,8 @@ export const generateConceptImage = async (term: string): Promise<string | undef
 export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<string | undefined> => {
   const ai = getClient();
   
+  // Currently, gemini-2.5-flash-preview-tts is the primary TTS model.
+  // We use this regardless of the main text model.
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",

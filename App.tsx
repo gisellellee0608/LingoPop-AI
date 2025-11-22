@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Languages, Book, Search, RotateCcw, Volume2, Send, 
   Save, Sparkles, ChevronRight, Brain, ArrowLeft, Loader2, Star, Settings, CheckCircle, Key, Eye, EyeOff,
-  Download, Upload, Trash2
+  Download, Upload, Trash2, Image as ImageIcon
 } from 'lucide-react';
 import { 
   AppView, 
@@ -31,9 +31,7 @@ const ConfigView: React.FC<{
     if (savedKey) {
       setApiKey(savedKey);
     } else if (process.env.API_KEY) {
-      // If environment key is preset (e.g. in dev), we can use that, 
-      // but we don't show it in the input for security unless user types it.
-      // We can just let the service handle process.env.
+      // If environment key is preset (e.g. in dev), we can use that
     }
   }, []);
 
@@ -323,7 +321,14 @@ const ResultView: React.FC<{
         <div className="relative h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
           {entry.imageUrl ? (
             <img src={`data:image/png;base64,${entry.imageUrl}`} alt={entry.term} className="w-full h-full object-cover" />
+          ) : entry.imageUrl === null ? (
+             // Explicitly failed to load
+            <div className="text-gray-300 flex flex-col items-center">
+               <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+               <span className="text-xs">No image available</span>
+            </div>
           ) : (
+             // Loading state (undefined)
             <div className="text-gray-300 flex flex-col items-center">
                <Loader2 className="animate-spin mb-2"/>
                <span className="text-xs">Drawing...</span>
@@ -578,8 +583,12 @@ const NotebookView: React.FC<{
       <div className="space-y-3">
         {entries.map(entry => (
           <div key={entry.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4 items-start group">
-             {entry.imageUrl && (
+             {entry.imageUrl ? (
                <img src={`data:image/png;base64,${entry.imageUrl}`} className="w-16 h-16 rounded-xl object-cover bg-gray-100 flex-shrink-0" alt="" />
+             ) : (
+               <div className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center text-gray-300 flex-shrink-0">
+                 <ImageIcon className="w-6 h-6" />
+               </div>
              )}
              <div className="flex-1">
                <div className="flex justify-between items-start">
@@ -638,8 +647,12 @@ const FlashcardsView: React.FC<{
         >
           {/* FRONT */}
           <div className="absolute w-full h-full bg-white rounded-3xl shadow-xl border border-gray-100 flex flex-col items-center justify-center p-8 backface-hidden">
-             {current.imageUrl && (
+             {current.imageUrl ? (
                <img src={`data:image/png;base64,${current.imageUrl}`} className="w-32 h-32 rounded-full object-cover mb-6 shadow-md" alt="" />
+             ) : (
+               <div className="w-32 h-32 rounded-full bg-gray-100 mb-6 flex items-center justify-center text-gray-300">
+                 <ImageIcon className="w-12 h-12" />
+               </div>
              )}
              <h3 className="text-4xl font-black text-pop-primary text-center">{current.term}</h3>
              <p className="text-gray-400 text-sm mt-4 animate-pulse">Tap to flip</p>
@@ -746,16 +759,22 @@ const App: React.FC = () => {
         id: tempId,
         term,
         ...data,
+        imageUrl: undefined, // Explicitly loading
         timestamp: Date.now()
       };
       setCurrentEntry(newEntry);
       setLoading(false); // Show content immediately
 
       // 3. Fetch image in background
-      GeminiService.generateConceptImage(term).then(img => {
-        if (img) {
-          setCurrentEntry(prev => prev && prev.id === tempId ? { ...prev, imageUrl: img } : prev);
-        }
+      // PASS THE MODEL HERE so service knows whether to use PRO or FLASH image model
+      GeminiService.generateConceptImage(term, model).then(img => {
+         setCurrentEntry(prev => {
+           // Only update if the user is still looking at the same entry
+           if (prev && prev.id === tempId) {
+             return { ...prev, imageUrl: img || null }; // Map undefined to null (failed) to stop loading spinner
+           }
+           return prev;
+         });
       });
 
     } catch (error) {

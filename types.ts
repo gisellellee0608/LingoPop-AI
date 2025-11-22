@@ -23,7 +23,7 @@ export interface DictionaryEntry {
   definition: string;
   examples: DictionaryExample[];
   funExplanation: string; // The "friend chat" style explanation
-  imageUrl?: string; // Base64 image
+  imageUrl?: string | null; // Base64 image. undefined = loading, null = failed/none, string = loaded
   timestamp: number;
 }
 
