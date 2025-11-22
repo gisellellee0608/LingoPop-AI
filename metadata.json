@@ -1,0 +1,7 @@
+{
+  "name": "LingoPop AI",
+  "description": "A vibrant, fun AI-powered dictionary that explains words like a friend, generates visual concepts, creates stories from your vocabulary, and tests you with flashcards.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

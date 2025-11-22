@@ -1,0 +1,162 @@
+import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { DictionaryEntry } from "../types";
+
+// Helper to ensure API Key exists
+const getClient = () => {
+  // Check environment variable first, then local storage for user-provided key
+  const apiKey = process.env.API_KEY || localStorage.getItem('gemini_api_key') || '';
+  
+  if (!apiKey) {
+    console.error("API_KEY is missing");
+    // We don't throw immediately to allow the UI to handle the "missing key" state gracefully if needed,
+    // but for actual calls, the SDK will throw.
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
+export const lookupWord = async (
+  term: string,
+  nativeLang: string,
+  targetLang: string,
+  model: string = 'gemini-2.5-flash'
+): Promise<Omit<DictionaryEntry, 'id' | 'timestamp' | 'imageUrl'>> => {
+  const ai = getClient();
+  
+  const prompt = `
+    Explain the term/phrase "${term}" (which is in ${targetLang}) for a native ${nativeLang} speaker.
+    
+    I need:
+    1. A clear definition in ${nativeLang}.
+    2. Two distinct example sentences in ${targetLang} with ${nativeLang} translation.
+    3. A "Fun Explanation": Imagine you are a cool, witty local friend explaining this. Talk about cultural context, slang usage, specific tone, or how to avoid embarrassing mistakes. Be concise and fun. NOT a textbook definition.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: model,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          definition: { type: Type.STRING },
+          examples: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                original: { type: Type.STRING },
+                translation: { type: Type.STRING },
+              }
+            }
+          },
+          funExplanation: { type: Type.STRING },
+        }
+      }
+    }
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("No text returned from API");
+  return JSON.parse(text);
+};
+
+export const generateConceptImage = async (term: string): Promise<string | undefined> => {
+  const ai = getClient();
+  
+  // Using 2.5-flash-image as it's fast and sufficient for icons/concepts
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: {
+        parts: [{ text: `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background.` }]
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1",
+        }
+      }
+    });
+
+    // Helper to find image part
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData && part.inlineData.data) {
+        return part.inlineData.data;
+      }
+    }
+  } catch (e) {
+    console.warn("Image generation failed", e);
+  }
+  return undefined;
+};
+
+export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<string | undefined> => {
+  const ai = getClient();
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
+          },
+        },
+      },
+    });
+
+    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  } catch (error) {
+    console.error("TTS Error:", error);
+    return undefined;
+  }
+};
+
+export const chatWithAssistant = async (
+  history: { role: 'user' | 'model'; text: string }[],
+  newMessage: string,
+  contextWord: string,
+  targetLang: string,
+  model: string = 'gemini-2.5-flash'
+): Promise<string> => {
+  const ai = getClient();
+  
+  const chat = ai.chats.create({
+    model: model,
+    config: {
+      systemInstruction: `You are a helpful language tutor assistant. The user is currently looking at the word "${contextWord}" in ${targetLang}. Answer their questions briefly and helpfully. Keep the tone friendly and encouraging.`
+    },
+    history: history.map(h => ({
+      role: h.role,
+      parts: [{ text: h.text }]
+    }))
+  });
+
+  const result = await chat.sendMessage({ message: newMessage });
+  return result.text || "I couldn't understand that.";
+};
+
+export const generateStory = async (
+  words: string[], 
+  targetLang: string, 
+  nativeLang: string,
+  model: string = 'gemini-2.5-flash'
+): Promise<string> => {
+  const ai = getClient();
+  
+  const prompt = `
+    Write a short, funny, and coherent story in ${targetLang} using the following words: ${words.join(', ')}.
+    After the story, provide a brief summary in ${nativeLang}.
+    Highlight the used words in the story if possible (e.g., by capitalization).
+    Keep it under 150 words.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: model,
+    contents: prompt
+  });
+
+  return response.text || "Could not generate story.";
+};
