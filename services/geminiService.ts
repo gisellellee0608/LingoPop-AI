@@ -71,15 +71,34 @@ export const generateConceptImage = async (term: string, mainModel: string = 'ge
   const imageModel = isPro ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   
   // Config: Pro models support explicit size setting
+  // CRITICAL: We MUST set safety settings to BLOCK_ONLY_HIGH to prevent false positives from blocking the image.
+  const safetySettings = [
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' }
+  ];
+
   const config = isPro 
-    ? { imageConfig: { aspectRatio: "1:1", imageSize: "1K" } } 
-    : { imageConfig: { aspectRatio: "1:1" } };
+    ? { 
+        imageConfig: { aspectRatio: "1:1", imageSize: "1K" },
+        safetySettings: safetySettings
+      } 
+    : { 
+        imageConfig: { aspectRatio: "1:1" },
+        safetySettings: safetySettings
+      };
 
   try {
+    // Simplified prompt for Flash Image to ensure better success rate
+    const promptText = isPro 
+      ? `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background. No text.`
+      : `A simple, colorful, vector icon representing "${term}". White background.`;
+
     const response = await ai.models.generateContent({
       model: imageModel,
       contents: {
-        parts: [{ text: `A clean, vibrant, minimal, flat vector illustration representing the concept of "${term}". White background. No text.` }]
+        parts: [{ text: promptText }]
       },
       config: config
     });
@@ -93,7 +112,7 @@ export const generateConceptImage = async (term: string, mainModel: string = 'ge
         }
     }
   } catch (e) {
-    console.warn(`Image generation failed using model ${imageModel}. This might be due to safety filters or model unavailability.`, e);
+    console.warn(`Image generation failed using model ${imageModel}.`, e);
   }
   return undefined;
 };
